@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Flashcards Pro v3.0</title>
+    <title>Smart Flashcards Pro v3.1</title>
     
     <!-- PWA Settings -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -68,7 +68,7 @@
             </div>
             <div>
                 <h2 class="text-2xl font-extrabold tracking-tight">Smart <span class="text-brand">Cards Pro</span></h2>
-                <p class="text-xs text-slate-400 mt-2">自動音声読み上げ対応 PWA 暗記システム (v3.0)</p>
+                <p class="text-xs text-slate-400 mt-2">自動音声読み上げ対応 PWA 暗記システム (v3.1)</p>
             </div>
             
             <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 text-left leading-relaxed flex flex-col gap-2">
@@ -82,7 +82,7 @@
                 </div>
                 <div class="flex items-start gap-2">
                     <span class="text-brand">✔</span>
-                    <span>「正答率」ベースでの苦手分析＆最優先学習に対応しました</span>
+                    <span>「正答率」ベースの苦手ソート＆前のカードに戻る機能を搭載！</span>
                 </div>
             </div>
 
@@ -195,7 +195,7 @@
             </div>
         </div>
 
-        <!-- 学習統計ミニログ (v3.0 正答率モデルに刷新) -->
+        <!-- 学習統計ミニログ (v3.1 正答率モデル) -->
         <div id="statsMini" class="w-full bg-slate-900/50 border border-slate-900 rounded-xl p-3 flex justify-around text-center text-xs">
             <div>
                 <span class="text-slate-500 block mb-0.5">正答率</span>
@@ -215,23 +215,28 @@
 
     </main>
 
-    <!-- FOOTER ACTION BUTTONS -->
+    <!-- FOOTER ACTION BUTTONS (v3.1 「戻る」ボタン新設) -->
     <footer class="bg-slate-900/50 border-t border-slate-800/80 px-4 py-6 z-10">
         <div class="max-w-md mx-auto flex gap-2">
+            <!-- 戻るボタン (New v3.1) -->
+            <button id="backBtn" onclick="goBack()" class="bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-400 border border-slate-700 w-14 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-slate-950/20 disabled:opacity-30 disabled:pointer-events-none" disabled title="1つ前に戻る">
+                <i class="fa-solid fa-reply text-base"></i>
+            </button>
+
             <!-- 不正解ボタン -->
-            <button onclick="handleResponse('wrong')" class="flex-1 bg-red-950/40 hover:bg-red-950/60 active:scale-95 text-red-400 border border-red-900/50 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-red-950/20">
+            <button onclick="handleResponse('wrong')" class="flex-grow flex-1 bg-red-950/40 hover:bg-red-950/60 active:scale-95 text-red-400 border border-red-900/50 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-red-950/20">
                 <i class="fa-solid fa-xmark text-base"></i>
                 <span>違った</span>
             </button>
             
             <!-- パスボタン -->
-            <button onclick="handleResponse('pass')" class="flex-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 border border-slate-700 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-slate-950/20">
+            <button onclick="handleResponse('pass')" class="flex-grow flex-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 border border-slate-700 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-slate-950/20">
                 <i class="fa-solid fa-forward text-base"></i>
                 <span>パス</span>
             </button>
             
             <!-- 正解ボタン -->
-            <button onclick="handleResponse('correct')" class="flex-1 bg-brand hover:bg-brand-light active:scale-95 text-slate-950 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-brand/10">
+            <button onclick="handleResponse('correct')" class="flex-grow flex-1 bg-brand hover:bg-brand-light active:scale-95 text-slate-950 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-brand/10">
                 <i class="fa-solid fa-check text-base"></i>
                 <span>覚えた！</span>
             </button>
@@ -346,6 +351,9 @@
         let currentMode = 'normal'; 
         let isSubmitting = false;
         
+        // 【v3.1】履歴管理スタック（戻るボタン用）
+        let historyStack = [];
+
         // 音声合成（TTS）コントロール
         const synth = window.speechSynthesis;
         let audioUnlocked = false;
@@ -555,9 +563,13 @@
             applyModeAndSort(); 
         }
 
-        // ソート適用 (v3.0 正答率モデルにアップグレード)
+        // ソート適用 (v3.1 苦手優先：正答率モデルにアップグレード)
         function applyModeAndSort() {
             if (!cards || cards.length === 0) return;
+
+            // 履歴の初期化
+            historyStack = [];
+            updateBackButtonState();
 
             const modeLabels = {
                 'weak': '苦手優先',
@@ -588,7 +600,7 @@
                         return rateA - rateB;
                     }
                     
-                    // 正答率が同じ（例：どちらも0%）なら、未学習（実施回数0）をさらに優先
+                    // 正答率が同じなら、未学習（実施回数0）を優先
                     if (attemptA !== attemptB) {
                         return attemptA - attemptB; // 0回のものを前に
                     }
@@ -632,7 +644,6 @@
             }
 
             if (lang === 'ja-JP') {
-                // Windows Chromeの「Google 日本語」、iOSの「拡張/Enhanced」高品質ボイス、Edgeの「Microsoft Natural」、OS標準 of 「Microsoft Haruka」等を優先検出
                 const preferredJa = ['google 日本語', 'enhanced', '拡張', 'siri', 'microsoft haruka', 'microsoft ichiro', 'natural', 'ayumi', 'sayaka'];
                 for (let pref of preferredJa) {
                     const voice = voicesList.find(v => v.lang.startsWith('ja') && v.name.toLowerCase().includes(pref));
@@ -640,7 +651,6 @@
                 }
                 return voicesList.find(v => v.lang.startsWith('ja')) || null;
             } else {
-                // 英語（アメリカ英語優先。iOSの「Siri」や「Enhanced/拡張」高品質ボイスも優先）
                 const preferredEn = ['google us english', 'enhanced', '拡張', 'siri', 'microsoft zira', 'microsoft david', 'natural', 'en-us'];
                 for (let pref of preferredEn) {
                     const voice = voicesList.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('en-us') && v.name.toLowerCase().includes(pref));
@@ -654,13 +664,11 @@
         function speakText(text) {
             if (!synth || !text) return;
 
-            // Chrome/Edgeのロックバグを防ぐおまじない
             synth.cancel(); 
             if (synth.paused) {
                 synth.resume();
             }
 
-            // cancel() の直後に即speakするとキューが詰まる場合があるため、ごくわずかなディレイを挟む
             setTimeout(() => {
                 const utterance = new SpeechSynthesisUtterance(text);
                 const lang = detectLanguage(text);
@@ -668,7 +676,6 @@
                 utterance.lang = lang;
                 utterance.rate = speechRate;
 
-                // WindowsやChrome上の最適なボイスを決定してアサイン
                 const voice = selectOptimalVoice(lang);
                 if (voice) {
                     utterance.voice = voice;
@@ -748,7 +755,7 @@
                                    .replace('dl=0', 'raw=1');
                 }
                 
-                // 動的枠線ロード(横線バグ回避)
+                // 動的枠線ロード
                 cardImg.onload = () => {
                     imgContainer.classList.remove('hidden');
                     imgContainer.classList.add('border', 'border-slate-800');
@@ -762,7 +769,7 @@
                 cardImg.src = imgUrl;
             }
 
-            // 学習ログ統計 (v3.0 正答率を「割合％（正解数/実施回数）」の形式で分かりやすく表示)
+            // 学習ログ統計 (v3.1 正答率を「割合％（正解数/実施回数）」の形式で表示)
             const attempt = Number(card.Attempt_Count) || 0;
             const correct = Number(card.Correct_Count) || 0;
             const rate = attempt > 0 ? Math.round((correct / attempt) * 100) : 0;
@@ -773,9 +780,9 @@
 
             document.getElementById('progressText').innerText = `進捗: ${currentIndex + 1} / ${cards.length} 問目`;
 
-            // 【Windows/Chrome対応】
-            // アプリ開始後の初回オーバーレイが表示されている最中は自動再生せず、
-            // オーバーレイを閉じた（audioUnlockedになった）段階から自動読み上げを開始します
+            // 【v3.1】戻るボタンの表示状態を更新
+            updateBackButtonState();
+
             if (audioUnlocked) {
                 setTimeout(() => {
                     if (!isFlipped) {
@@ -791,13 +798,12 @@
             isFlipped = !isFlipped;
             if (isFlipped) {
                 cardEl.classList.add('rotate-y-180');
-                // 裏面(解答)をめくった瞬間に自動読み上げ
                 if (audioUnlocked) {
                     setTimeout(() => {
                         if (isFlipped) {
                             playCurrentCardVoice(null, 'back');
                         }
-                    }, 400); // 反転アニメーション完了後の読み上げ
+                    }, 400); 
                 }
             } else {
                 cardEl.classList.remove('rotate-y-180');
@@ -836,12 +842,32 @@
         // リスタート処理
         function restartRound() {
             toggleRoundCompleteModal(false);
+            historyStack = []; // 履歴スタックもクリア
             if (currentMode === 'random') {
                 applyModeAndSort();
             } else {
                 currentIndex = 0;
                 resetCardState();
                 displayCard();
+            }
+        }
+
+        // 【v3.1】1つ前の問題に戻る（戻るボタンのアクション）
+        function goBack() {
+            if (historyStack.length === 0) return;
+            
+            // 履歴から1つ前のインデックスを取り出してセット
+            currentIndex = historyStack.pop();
+            
+            resetCardState();
+            displayCard();
+        }
+
+        // 【v3.1】戻るボタンの有効・無効化の切り替え
+        function updateBackButtonState() {
+            const backBtn = document.getElementById('backBtn');
+            if (backBtn) {
+                backBtn.disabled = (historyStack.length === 0);
             }
         }
         
@@ -876,7 +902,7 @@
             }
         }
 
-        // 各評価ボタンクリック時の処理 (v3.0 実施回数 Attempt_Count 対応)
+        // 各評価ボタンクリック時の処理 (v3.1 履歴記録対応)
         async function handleResponse(action) {
             if (cards.length === 0 || isSubmitting) return;
             isSubmitting = true;
@@ -884,7 +910,9 @@
             const currentCard = cards[currentIndex];
             const apiUrl = localStorage.getItem('flashcard_api_url');
 
-            // 評価時、パス以外は「実施回数(Attempt_Count)」を必ず+1する（案①）
+            // 【v3.1】次の問題に進む前に、現在の問題インデックスを履歴スタックに積む
+            historyStack.push(currentIndex);
+
             if (action === 'correct') {
                 currentCard.Attempt_Count = (Number(currentCard.Attempt_Count) || 0) + 1;
                 currentCard.Correct_Count = (Number(currentCard.Correct_Count) || 0) + 1;
@@ -908,6 +936,7 @@
                 if (isRoundFinished) {
                     showRoundComplete(); 
                     currentIndex = 0;
+                    historyStack = []; // 1周終わったら履歴をリセット
                 } else {
                     currentIndex = (currentIndex + 1) % cards.length;
                 }
@@ -920,11 +949,11 @@
             }
 
             try {
-                // GASにPOST。v3.0の do_post は `isCorrect` をもとに、GAS側で Attempt_Count と Correct_Count の両方をインクリメントします。
+                // GASにPOST
                 await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'text/plain', // CORSプレフライト回避仕様
+                        'Content-Type': 'text/plain', 
                     },
                     body: JSON.stringify({
                         sheetName: currentCategory,
