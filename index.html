@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smart Flashcards Pro v3.0</title>
+    
+    <!-- PWA Settings -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="暗記カードPro">
+    
+    <!-- Tailwind CSS & FontAwesome -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            light: '#deff9a',
+                            DEFAULT: '#b5e655',
+                            dark: '#1e293b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        /* 3Dカードの反転用スタイル */
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+        .transform-style-3d {
+            transform-style: preserve-3d;
+        }
+        .backface-hidden {
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        .rotate-y-180 {
+            transform: rotateY(180deg);
+        }
+        /* スムーズなスクロール */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between font-sans selection:bg-brand selection:text-slate-900 no-scrollbar overflow-x-hidden">
+
+    <!-- WELCOME / AUDIO UNLOCK OVERLAY -->
+    <div id="welcomeOverlay" class="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 transition-all duration-500">
+        <div class="max-w-sm w-full text-center flex flex-col gap-6">
+            <div class="w-20 h-20 rounded-2xl bg-brand flex items-center justify-center text-slate-950 font-bold text-4xl mx-auto shadow-lg shadow-brand/20 animate-pulse">
+                <i class="fa-solid fa-brain"></i>
+            </div>
+            <div>
+                <h2 class="text-2xl font-extrabold tracking-tight">Smart <span class="text-brand">Cards Pro</span></h2>
+                <p class="text-xs text-slate-400 mt-2">自動音声読み上げ対応 PWA 暗記システム (v3.0)</p>
+            </div>
+            
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 text-left leading-relaxed flex flex-col gap-2">
+                <div class="flex items-start gap-2">
+                    <span class="text-brand">✔</span>
+                    <span>ブラウザの自動再生ポリシーを解除し、音声を有効化します</span>
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-brand">✔</span>
+                    <span>GASバックエンドのスプレッドシートからデータを自動同期します</span>
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-brand">✔</span>
+                    <span>「正答率」ベースでの苦手分析＆最優先学習に対応しました</span>
+                </div>
+            </div>
+
+            <button onclick="startAppWithAudio()" class="w-full bg-brand hover:bg-brand-light text-slate-950 font-extrabold py-4 rounded-2xl transition-all shadow-lg shadow-brand/20 text-sm active:scale-[0.98] flex items-center justify-center gap-2">
+                <i class="fa-solid fa-play"></i>
+                <span>読み上げを有効にしてスタート</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- HEADER -->
+    <header class="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-4 py-3">
+        <div class="max-w-md mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center text-slate-950 font-bold">
+                    <i class="fa-solid fa-brain text-sm"></i>
+                </div>
+                <h1 class="text-lg font-bold tracking-tight">Smart <span class="text-brand">Cards Pro</span></h1>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <!-- カテゴリ選択とモード選択 -->
+                <div class="flex gap-2">
+                    <select id="categorySelect" onchange="changeCategory(this.value)" class="bg-slate-800 text-xs font-bold text-slate-200 border border-slate-700 rounded-lg px-2 py-2 focus:outline-none focus:border-brand">
+                    </select>
+                    <select id="modeSelect" onchange="changeMode(this.value)" class="flex-1 bg-slate-800 text-xs font-bold text-slate-200 border border-slate-700 rounded-lg px-2 py-2 focus:outline-none focus:border-brand">
+                        <option value="normal">📋 登録順</option>
+                        <option value="weak">🔺 苦手優先</option>
+                        <option value="forgotten">⏳ 忘却順</option>
+                        <option value="random">🔀 ランダム</option>
+                    </select>
+                </div>
+
+                <!-- 設定ボタン -->
+                <button onclick="toggleSettingsModal(true)" class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 hover:text-brand transition-colors">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-grow flex flex-col items-center justify-center px-4 py-6 max-w-md mx-auto w-full gap-4">
+        
+        <!-- プログレス表示 -->
+        <div class="w-full flex items-center justify-between text-xs text-slate-400 px-1">
+            <span id="progressText">カードを読み込み中...</span>
+            <div class="flex gap-2 items-center">
+                <span id="syncStatusBadge" class="text-blue-400 text-[11px] animate-pulse hidden">
+                    <i class="fa-solid fa-arrows-rotate animate-spin mr-1"></i>同期中
+                </span>
+                <span id="modeBadge" class="bg-brand/20 text-brand text-[11px] px-2.5 py-0.5 rounded-full font-bold">
+                    登録順
+                </span>
+            </div>
+        </div>
+
+        <!-- 3D フラッシュカード -->
+        <div class="w-full perspective-1000 h-[400px]" onclick="flipCard()">
+            <div id="flashcard" class="relative w-full h-full transition-transform duration-500 transform-style-3d cursor-pointer">
+                
+                <!-- 表面（問題） -->
+                <div class="absolute w-full h-full backface-hidden bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between shadow-xl">
+                    <div class="flex justify-between items-center w-full">
+                        <div class="text-xs text-slate-500 font-bold tracking-widest uppercase">Question</div>
+                        <!-- 表面音声再再生ボタン -->
+                        <button onclick="playCurrentCardVoice(event, 'front')" class="w-10 h-10 rounded-full bg-slate-850 hover:bg-slate-800 active:scale-90 text-brand flex items-center justify-center transition-all shadow border border-slate-800" title="音声を聴く">
+                            <i class="fa-solid fa-volume-high text-sm"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="flex-grow flex items-center justify-center">
+                        <p id="frontText" class="text-xl md:text-2xl text-center font-bold leading-relaxed text-slate-100">
+                            問題がここに表示されます
+                        </p>
+                    </div>
+                    <div class="text-center text-xs text-slate-500">
+                        <i class="fa-solid fa-rotate mr-1"></i> タップして解答を表示
+                    </div>
+                </div>
+                
+                <!-- 裏面（解答・解説） -->
+                <div class="absolute w-full h-full backface-hidden rotate-y-180 bg-slate-900 border-2 border-brand/20 rounded-2xl p-6 flex flex-col justify-between shadow-xl overflow-y-auto no-scrollbar">
+                    <div class="flex justify-between items-center w-full">
+                        <div class="text-xs text-brand font-bold tracking-widest uppercase">Answer & Info</div>
+                        <!-- 裏面音声再再生ボタン -->
+                        <button onclick="playCurrentCardVoice(event, 'back')" class="w-10 h-10 rounded-full bg-brand/10 hover:bg-brand/20 active:scale-90 text-brand flex items-center justify-center transition-all shadow border border-brand/20" title="音声を聴く">
+                            <i class="fa-solid fa-volume-high text-sm"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="flex-grow flex flex-col items-center justify-center my-4 gap-4 w-full">
+                        <p id="backText" class="text-xl md:text-2xl text-center font-bold text-brand leading-relaxed">
+                            解答がここに表示されます
+                        </p>
+                        <p id="explanationText" class="text-sm text-slate-400 text-center max-w-sm">
+                            解説がここに表示されます
+                        </p>
+                        <!-- 境界線(border)は動的にコントロール -->
+                        <div id="imageContainer" class="hidden w-full max-h-[150px] overflow-hidden rounded-lg cursor-zoom-in" onclick="openLightbox(event)">
+                            <img id="cardImage" alt="補足画像" class="w-full h-full object-contain">
+                        </div>
+                    </div>
+
+                    <div class="text-center text-xs text-slate-500">
+                        <i class="fa-solid fa-rotate mr-1"></i> タップして問題に戻る
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- 学習統計ミニログ (v3.0 正答率モデルに刷新) -->
+        <div id="statsMini" class="w-full bg-slate-900/50 border border-slate-900 rounded-xl p-3 flex justify-around text-center text-xs">
+            <div>
+                <span class="text-slate-500 block mb-0.5">正答率</span>
+                <span id="statCorrectCount" class="font-bold text-brand">-</span>
+            </div>
+            <div class="border-l border-slate-800"></div>
+            <div>
+                <span class="text-slate-500 block mb-0.5">難易度</span>
+                <span id="statLevel" class="font-bold text-slate-300">-</span>
+            </div>
+            <div class="border-l border-slate-800"></div>
+            <div>
+                <span class="text-slate-500 block mb-0.5">最終学習</span>
+                <span id="statLastDate" class="font-bold text-slate-300">-</span>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- FOOTER ACTION BUTTONS -->
+    <footer class="bg-slate-900/50 border-t border-slate-800/80 px-4 py-6 z-10">
+        <div class="max-w-md mx-auto flex gap-2">
+            <!-- 不正解ボタン -->
+            <button onclick="handleResponse('wrong')" class="flex-1 bg-red-950/40 hover:bg-red-950/60 active:scale-95 text-red-400 border border-red-900/50 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-red-950/20">
+                <i class="fa-solid fa-xmark text-base"></i>
+                <span>違った</span>
+            </button>
+            
+            <!-- パスボタン -->
+            <button onclick="handleResponse('pass')" class="flex-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 border border-slate-700 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-slate-950/20">
+                <i class="fa-solid fa-forward text-base"></i>
+                <span>パス</span>
+            </button>
+            
+            <!-- 正解ボタン -->
+            <button onclick="handleResponse('correct')" class="flex-1 bg-brand hover:bg-brand-light active:scale-95 text-slate-950 py-4 px-3 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-1 shadow-lg shadow-brand/10">
+                <i class="fa-solid fa-check text-base"></i>
+                <span>覚えた！</span>
+            </button>
+        </div>
+    </footer>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-5">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                    <i class="fa-solid fa-gear text-brand"></i> API & 音声設定
+                </h3>
+                <button onclick="toggleSettingsModal(false)" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <p class="text-xs text-slate-400 leading-relaxed">
+                接続URLはローカルに暗号化されず、ブラウザ本体(localStorage)にのみセキュアに保存されます。
+            </p>
+
+            <!-- GAS Web App URL -->
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-bold text-slate-300">GASのWebアプリURL</label>
+                <input type="password" id="apiUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="bg-slate-950 text-sm text-slate-200 border border-slate-800 rounded-xl px-3.5 py-3 focus:outline-none focus:border-brand w-full">
+                <div class="flex items-center gap-1.5 mt-1">
+                    <input type="checkbox" id="showUrlCheckbox" onchange="toggleUrlVisibility()" class="rounded bg-slate-950 border-slate-800 text-brand focus:ring-0">
+                    <label for="showUrlCheckbox" class="text-[11px] text-slate-400 cursor-pointer">URLを表示する</label>
+                </div>
+            </div>
+
+            <!-- Speech Rate Setting -->
+            <div class="flex flex-col gap-1.5 border-t border-slate-800 pt-3">
+                <div class="flex justify-between items-center">
+                    <label class="text-xs font-bold text-slate-300">音声の読み上げ速度</label>
+                    <span id="rateValueDisplay" class="text-xs text-brand font-mono font-bold">1.0x</span>
+                </div>
+                <input type="range" id="speechRateInput" min="0.5" max="2.0" step="0.1" value="1.0" oninput="updateSpeechRate(this.value)" class="w-full accent-brand bg-slate-950 h-2 rounded-lg appearance-none cursor-pointer">
+                <div class="flex justify-between text-[10px] text-slate-500">
+                    <span>ゆっくり</span>
+                    <span>標準</span>
+                    <span>速い</span>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-2">
+                <button onclick="toggleSettingsModal(false)" class="flex-1 bg-slate-800 text-slate-300 text-sm font-semibold py-3 rounded-xl hover:bg-slate-700 transition-colors">
+                    キャンセル
+                </button>
+                <button onclick="saveSettings()" class="flex-1 bg-brand text-slate-950 text-sm font-bold py-3 rounded-xl hover:bg-brand-light transition-colors">
+                    設定を保存
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 一巡完了モーダル (ROUND COMPLETE MODAL) -->
+    <div id="roundCompleteModal" class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-sm w-full shadow-2xl flex flex-col gap-6 text-center">
+            <div class="w-16 h-16 rounded-full bg-brand/20 flex items-center justify-center text-brand text-3xl mx-auto shadow-lg shadow-brand/10 animate-bounce">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold text-slate-100 tracking-tight">1周完了！お疲れ様でした 🎉</h3>
+                <p class="text-xs text-slate-400 mt-2">スプレッドシート内のすべてのカードを学習しました。</p>
+            </div>
+
+            <!-- 今回の学習セッション統計 -->
+            <div class="bg-slate-950 border border-slate-800/80 rounded-2xl p-4 grid grid-cols-2 gap-3 text-sm">
+                <div class="text-center">
+                    <span class="text-[10px] text-slate-500 block font-bold uppercase tracking-wider">総カード数</span>
+                    <span id="completedTotalCount" class="text-lg font-bold text-slate-200">-</span>
+                </div>
+                <div class="text-center border-l border-slate-800">
+                    <span class="text-[10px] text-slate-500 block font-bold uppercase tracking-wider">学習モード</span>
+                    <span id="completedModeName" class="text-xs font-bold text-brand mt-1 block">-</span>
+                </div>
+            </div>
+
+            <p class="text-xs text-slate-400 leading-relaxed">
+                もう一度繰り返してさらに記憶を定着させるか、他のカテゴリや学習モードに挑戦してみましょう。
+            </p>
+
+            <div class="flex flex-col gap-2">
+                <button onclick="restartRound()" class="w-full bg-brand hover:bg-brand-light text-slate-950 font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-brand/10">
+                    もう1周する
+                </button>
+                <button onclick="toggleRoundCompleteModal(false)" class="w-full bg-slate-800 text-slate-300 font-semibold py-3 rounded-xl hover:bg-slate-700 transition-colors">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 画像拡大モーダル (IMAGE LIGHTBOX MODAL) -->
+    <div id="imageLightboxModal" class="fixed inset-0 bg-black/95 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="closeLightbox()">
+        <!-- 閉じるバツボタン -->
+        <button class="absolute top-4 right-4 text-white text-3xl hover:text-brand transition-colors focus:outline-none">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+        <!-- 画像拡大表示領域 -->
+        <img id="lightboxImage" src="" alt="拡大画像" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl transition-transform duration-300">
+    </div>
+
+    <!-- SCRIPT LOGIC -->
+    <script>
+        let cards = [];
+        let currentIndex = 0;
+        let isFlipped = false;
+        let currentCategory = ''; 
+        let currentMode = 'normal'; 
+        let isSubmitting = false;
+        
+        // 音声合成（TTS）コントロール
+        const synth = window.speechSynthesis;
+        let audioUnlocked = false;
+        let speechRate = 1.0;
+        let voicesList = [];
+
+        // アプリ起動時の処理
+        window.addEventListener('DOMContentLoaded', () => {
+            // ローカルストレージから各種設定を読み込む
+            const savedUrl = localStorage.getItem('flashcard_api_url');
+            const savedRate = localStorage.getItem('flashcard_speech_rate');
+            
+            if (savedRate) {
+                speechRate = parseFloat(savedRate);
+                document.getElementById('speechRateInput').value = speechRate;
+                document.getElementById('rateValueDisplay').innerText = speechRate.toFixed(1) + 'x';
+            }
+
+            if (savedUrl) {
+                document.getElementById('apiUrlInput').value = savedUrl;
+                loadSheetListAndCards(); 
+            } else {
+                toggleSettingsModal(true);
+                document.getElementById('progressText').innerText = "最初にAPI設定を行ってください。";
+            }
+            
+            // カテゴリ・出題モードの初期セレクト
+            const savedCat = localStorage.getItem('flashcard_category');
+            if (savedCat) {
+                currentCategory = savedCat;
+                document.getElementById('categorySelect').value = savedCat;
+            }
+
+            const savedMode = localStorage.getItem('flashcard_mode');
+            if (savedMode) {
+                currentMode = savedMode;
+                document.getElementById('modeSelect').value = savedMode;
+            }
+
+            // 非同期でブラウザの利用可能なボイスリストを取得（Chrome / Windows 対策）
+            loadVoices();
+            if (synth && typeof synth.addEventListener === 'function') {
+                synth.addEventListener('voiceschanged', loadVoices);
+            } else if (synth) {
+                synth.onvoiceschanged = loadVoices;
+            }
+        });
+
+        // 端末・ブラウザからボイス一覧をバッファリングする
+        function loadVoices() {
+            if (!synth) return;
+            voicesList = synth.getVoices();
+        }
+
+        // ウェルカムオーバーレイから「読み上げを有効にしてスタート」をタップした時の処理
+        function startAppWithAudio() {
+            // 音声をアンロックする
+            if (synth) {
+                const dummyUtterance = new SpeechSynthesisUtterance('');
+                synth.speak(dummyUtterance);
+                audioUnlocked = true;
+            }
+            
+            // ウェルカムオーバーレイをフェードアウトして非表示にする
+            const overlay = document.getElementById('welcomeOverlay');
+            overlay.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+            }, 500);
+
+            // 初回のカードを読み上げてスタート
+            if (cards.length > 0) {
+                playCurrentCardVoice(null, 'front');
+            }
+        }
+
+        // 緊急用アンロック処理（どこかタップされた時のフォールバック）
+        function unlockAudio() {
+            if (!audioUnlocked && synth) {
+                const u = new SpeechSynthesisUtterance('');
+                synth.speak(u);
+                audioUnlocked = true;
+            }
+        }
+
+        // モーダルの表示非表示
+        function toggleSettingsModal(show) {
+            const modal = document.getElementById('settingsModal');
+            if (show) {
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        // パスワード表示切り替え
+        function toggleUrlVisibility() {
+            const input = document.getElementById('apiUrlInput');
+            const checkbox = document.getElementById('showUrlCheckbox');
+            input.type = checkbox.checked ? 'text' : 'password';
+        }
+
+        // 音声読み上げ速度の動的更新
+        function updateSpeechRate(val) {
+            speechRate = parseFloat(val);
+            document.getElementById('rateValueDisplay').innerText = speechRate.toFixed(1) + 'x';
+        }
+
+        // 設定の保存
+        function saveSettings() {
+            const urlInput = document.getElementById('apiUrlInput').value.trim();
+            if (!urlInput.startsWith('https://script.google.com/')) {
+                alert('有効なGoogle Apps ScriptのURLを入力してください。');
+                return;
+            }
+            localStorage.setItem('flashcard_api_url', urlInput);
+            localStorage.setItem('flashcard_speech_rate', speechRate);
+            toggleSettingsModal(false);
+            loadSheetListAndCards(); 
+        }
+
+        // カテゴリの変更
+        function changeCategory(value) {
+            currentCategory = value;
+            localStorage.setItem('flashcard_category', value);
+            loadCards();
+        }
+
+        // スプレッドシートからタブ（シート）一覧を動的に取得
+        async function loadSheetListAndCards() {
+            const apiUrl = localStorage.getItem('flashcard_api_url');
+            if (!apiUrl) return;
+
+            document.getElementById('progressText').innerText = "シート構成を確認中...";
+
+            try {
+                const response = await fetch(`${apiUrl}?sheet=__list__`);
+                const sheetNames = await response.json();
+
+                if (sheetNames.error || !Array.isArray(sheetNames)) {
+                    document.getElementById('progressText').innerText = "シート構成の取得に失敗しました。";
+                    return;
+                }
+
+                const selectEl = document.getElementById('categorySelect');
+                selectEl.innerHTML = '';
+
+                sheetNames.forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.innerText = name; 
+                    selectEl.appendChild(option);
+                });
+
+                const savedCat = localStorage.getItem('flashcard_category');
+                if (savedCat && sheetNames.includes(savedCat)) {
+                    currentCategory = savedCat;
+                } else {
+                    currentCategory = sheetNames[0];
+                    localStorage.setItem('flashcard_category', currentCategory);
+                }
+                selectEl.value = currentCategory;
+
+                loadCards();
+
+            } catch (error) {
+                document.getElementById('progressText').innerText = "スプレッドシート接続エラー";
+                console.error(error);
+            }
+        }
+
+        // GASからカードを取得
+        async function loadCards() {
+            const apiUrl = localStorage.getItem('flashcard_api_url');
+            if (!apiUrl) return;
+
+            document.getElementById('progressText').innerText = "スプレッドシートから同期中...";
+            resetCardState();
+
+            try {
+                const response = await fetch(`${apiUrl}?sheet=${encodeURIComponent(currentCategory)}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    document.getElementById('progressText').innerText = "エラー: " + data.error;
+                    return;
+                }
+
+                if (data.length === 0) {
+                    document.getElementById('progressText').innerText = "データが空です。";
+                    return;
+                }
+
+                cards = data; 
+                applyModeAndSort(); 
+
+            } catch (error) {
+                document.getElementById('progressText').innerText = "同期に失敗しました。";
+                console.error(error);
+            }
+        }
+
+        // モード変更
+        function changeMode(val) {
+            currentMode = val;
+            localStorage.setItem('flashcard_mode', val); 
+            applyModeAndSort(); 
+        }
+
+        // ソート適用 (v3.0 正答率モデルにアップグレード)
+        function applyModeAndSort() {
+            if (!cards || cards.length === 0) return;
+
+            const modeLabels = {
+                'weak': '苦手優先',
+                'normal': '登録順',
+                'random': 'ランダム',
+                'forgotten': '忘却順'
+            };
+
+            const modeBadge = document.getElementById('modeBadge');
+            if (modeBadge) {
+                modeBadge.innerText = modeLabels[currentMode];
+            }
+
+            if (currentMode === 'weak') {
+                // 正答率（Correct_Count / Attempt_Count）が低い順にソート
+                // Attempt_Countが0または空欄のものは「正答率 0%」として最優先（最も先頭）に並べる
+                cards.sort((a, b) => {
+                    const attemptA = Number(a.Attempt_Count) || 0;
+                    const correctA = Number(a.Correct_Count) || 0;
+                    const rateA = attemptA > 0 ? (correctA / attemptA) : 0;
+
+                    const attemptB = Number(b.Attempt_Count) || 0;
+                    const correctB = Number(b.Correct_Count) || 0;
+                    const rateB = attemptB > 0 ? (correctB / attemptB) : 0;
+
+                    // 正答率に差があるなら、低い方を前に持ってくる
+                    if (rateA !== rateB) {
+                        return rateA - rateB;
+                    }
+                    
+                    // 正答率が同じ（例：どちらも0%）なら、未学習（実施回数0）をさらに優先
+                    if (attemptA !== attemptB) {
+                        return attemptA - attemptB; // 0回のものを前に
+                    }
+
+                    // 完全に等しいなら、IDの降順（新しい順）
+                    return (Number(b.ID) || 0) - (Number(a.ID) || 0);
+                });
+            } 
+            else if (currentMode === 'normal') {
+                cards.sort((a, b) => (Number(b.ID) || 0) - (Number(a.ID) || 0));
+            } 
+            else if (currentMode === 'random') {
+                for (let i = cards.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [cards[i], cards[j]] = [cards[j], cards[i]];
+                }
+            } 
+            else if (currentMode === 'forgotten') {
+                cards.sort((a, b) => {
+                    if (!a.Last_Date) return -1;
+                    if (!b.Last_Date) return 1;
+                    return new Date(a.Last_Date) - new Date(b.Last_Date);
+                });
+            }
+
+            currentIndex = 0;
+            resetCardState(); 
+            displayCard();    
+        }
+
+        // 音声の多言語言語判定ロジック
+        function detectLanguage(text) {
+            const englishRegex = /^[A-Za-z0-9\s.,'?!()"\-+:;@_&=%]*$/;
+            return englishRegex.test(text) ? 'en-US' : 'ja-JP';
+        }
+
+        // WindowsやChromeに最適化された音声エンジン（Voice）の選定
+        function selectOptimalVoice(lang) {
+            if (voicesList.length === 0 && synth) {
+                voicesList = synth.getVoices();
+            }
+
+            if (lang === 'ja-JP') {
+                // Windows Chromeの「Google 日本語」、iOSの「拡張/Enhanced」高品質ボイス、Edgeの「Microsoft Natural」、OS標準 of 「Microsoft Haruka」等を優先検出
+                const preferredJa = ['google 日本語', 'enhanced', '拡張', 'siri', 'microsoft haruka', 'microsoft ichiro', 'natural', 'ayumi', 'sayaka'];
+                for (let pref of preferredJa) {
+                    const voice = voicesList.find(v => v.lang.startsWith('ja') && v.name.toLowerCase().includes(pref));
+                    if (voice) return voice;
+                }
+                return voicesList.find(v => v.lang.startsWith('ja')) || null;
+            } else {
+                // 英語（アメリカ英語優先。iOSの「Siri」や「Enhanced/拡張」高品質ボイスも優先）
+                const preferredEn = ['google us english', 'enhanced', '拡張', 'siri', 'microsoft zira', 'microsoft david', 'natural', 'en-us'];
+                for (let pref of preferredEn) {
+                    const voice = voicesList.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('en-us') && v.name.toLowerCase().includes(pref));
+                    if (voice) return voice;
+                }
+                return voicesList.find(v => v.lang.toLowerCase().replace('_', '-').startsWith('en')) || null;
+            }
+        }
+
+        // 読み上げ処理のコアエンジン (Chromeのフリーズを完全回避)
+        function speakText(text) {
+            if (!synth || !text) return;
+
+            // Chrome/Edgeのロックバグを防ぐおまじない
+            synth.cancel(); 
+            if (synth.paused) {
+                synth.resume();
+            }
+
+            // cancel() の直後に即speakするとキューが詰まる場合があるため、ごくわずかなディレイを挟む
+            setTimeout(() => {
+                const utterance = new SpeechSynthesisUtterance(text);
+                const lang = detectLanguage(text);
+                
+                utterance.lang = lang;
+                utterance.rate = speechRate;
+
+                // WindowsやChrome上の最適なボイスを決定してアサイン
+                const voice = selectOptimalVoice(lang);
+                if (voice) {
+                    utterance.voice = voice;
+                }
+
+                synth.speak(utterance);
+            }, 50);
+        }
+
+        // 再生ボタンがクリックされた時の音声リプレイハンドラー
+        function playCurrentCardVoice(event, side) {
+            if (event) {
+                event.stopPropagation(); // めくりバブリングを確実に遮断
+            }
+            if (cards.length === 0) return;
+            const card = cards[currentIndex];
+            let speakTarget = '';
+
+            if (side === 'front') {
+                speakTarget = card.Problem_voice || card.Problem || card.問題 || '';
+            } else if (side === 'back') {
+                speakTarget = card.Answer_voice || card.Answer || card.解答 || '';
+            }
+
+            speakText(speakTarget);
+        }
+
+        // カード情報の描画 & 表面読み上げトリガー
+        function displayCard() {
+            if (cards.length === 0) return;
+            const card = cards[currentIndex];
+
+            // 表面表示
+            document.getElementById('frontText').innerText = card.Problem || card.問題 || '（問題が未入力です）';
+            
+            // 裏面表示
+            document.getElementById('backText').innerText = card.Answer || card.解答 || '（解答が未入力です）';
+            document.getElementById('explanationText').innerText = card.Explanation || card.解説 || '';
+            
+            // 画像取得制御
+            let imgUrl = '';
+            for (let key in card) {
+                if (key.toLowerCase() === 'url' || key.toLowerCase().includes('url')) {
+                    imgUrl = card[key];
+                    break;
+                }
+            }
+
+            const imgContainer = document.getElementById('imageContainer');
+            const cardImg = document.getElementById('cardImage');
+            
+            cardImg.removeAttribute('src');
+            imgContainer.classList.add('hidden');
+            imgContainer.classList.remove('border', 'border-slate-800');
+
+            if (imgUrl && String(imgUrl).trim().startsWith('http')) {
+                imgUrl = String(imgUrl).trim();
+                let fileId = '';
+                
+                // Drive 共有 URL の直接リンク化
+                if (imgUrl.includes('drive.google.com')) {
+                    const fileDMatch = imgUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+                    const idParamMatch = imgUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                    if (fileDMatch && fileDMatch[1]) {
+                        fileId = fileDMatch[1];
+                    } else if (idParamMatch && idParamMatch[1]) {
+                        fileId = idParamMatch[1];
+                    }
+                    if (fileId) {
+                        imgUrl = "https://lh3.googleusercontent.com/d/" + fileId;
+                    }
+                }
+                
+                // Dropbox 共有 URL の直接リンク化
+                if (imgUrl.includes('dropbox.com')) {
+                    imgUrl = imgUrl.replace(/(www\.)?dropbox\.com/, 'dl.dropboxusercontent.com')
+                                   .replace('dl=0', 'raw=1');
+                }
+                
+                // 動的枠線ロード(横線バグ回避)
+                cardImg.onload = () => {
+                    imgContainer.classList.remove('hidden');
+                    imgContainer.classList.add('border', 'border-slate-800');
+                };
+                
+                cardImg.onerror = () => {
+                    imgContainer.classList.add('hidden');
+                    imgContainer.classList.remove('border', 'border-slate-800');
+                };
+                
+                cardImg.src = imgUrl;
+            }
+
+            // 学習ログ統計 (v3.0 正答率を「割合％（正解数/実施回数）」の形式で分かりやすく表示)
+            const attempt = Number(card.Attempt_Count) || 0;
+            const correct = Number(card.Correct_Count) || 0;
+            const rate = attempt > 0 ? Math.round((correct / attempt) * 100) : 0;
+            
+            document.getElementById('statCorrectCount').innerText = `${rate}% (${correct}/${attempt}回)`;
+            document.getElementById('statLevel').innerText = card.Level || card.レベル || '未設定';
+            document.getElementById('statLastDate').innerText = card.Last_Date ? formatDateString(card.Last_Date) : '未学習';
+
+            document.getElementById('progressText').innerText = `進捗: ${currentIndex + 1} / ${cards.length} 問目`;
+
+            // 【Windows/Chrome対応】
+            // アプリ開始後の初回オーバーレイが表示されている最中は自動再生せず、
+            // オーバーレイを閉じた（audioUnlockedになった）段階から自動読み上げを開始します
+            if (audioUnlocked) {
+                setTimeout(() => {
+                    if (!isFlipped) {
+                        playCurrentCardVoice(null, 'front');
+                    }
+                }, 350);
+            }
+        }
+
+        // カードをめくる & 裏面自動読み上げトリガー
+        function flipCard() {
+            const cardEl = document.getElementById('flashcard');
+            isFlipped = !isFlipped;
+            if (isFlipped) {
+                cardEl.classList.add('rotate-y-180');
+                // 裏面(解答)をめくった瞬間に自動読み上げ
+                if (audioUnlocked) {
+                    setTimeout(() => {
+                        if (isFlipped) {
+                            playCurrentCardVoice(null, 'back');
+                        }
+                    }, 400); // 反転アニメーション完了後の読み上げ
+                }
+            } else {
+                cardEl.classList.remove('rotate-y-180');
+            }
+        }
+
+        // カードの状態を表面に戻す
+        function resetCardState() {
+            isFlipped = false;
+            document.getElementById('flashcard').classList.remove('rotate-y-180');
+        }
+
+        // モーダルの表示非表示
+        function toggleRoundCompleteModal(show) {
+            const modal = document.getElementById('roundCompleteModal');
+            if (modal) {
+                modal.classList.toggle('hidden', !show);
+            }
+        }
+
+        // 一周完了時の集計モーダル描画
+        function showRoundComplete() {
+            document.getElementById('completedTotalCount').innerText = `${cards.length} 枚`;
+
+            const modeLabels = {
+                'weak': '🔺 苦手優先',
+                'normal': '📋 登録順',
+                'random': '🔀 ランダム',
+                'forgotten': '⏳ 忘却順'
+            };
+            document.getElementById('completedModeName').innerText = modeLabels[currentMode];
+
+            toggleRoundCompleteModal(true);
+        }
+
+        // リスタート処理
+        function restartRound() {
+            toggleRoundCompleteModal(false);
+            if (currentMode === 'random') {
+                applyModeAndSort();
+            } else {
+                currentIndex = 0;
+                resetCardState();
+                displayCard();
+            }
+        }
+        
+        // 画像拡大モーダル
+        function openLightbox(event) {
+            event.stopPropagation(); 
+            
+            const cardImg = document.getElementById('cardImage');
+            const lightboxModal = document.getElementById('imageLightboxModal');
+            const lightboxImg = document.getElementById('lightboxImage');
+            
+            if (cardImg && cardImg.src && lightboxModal && lightboxImg) {
+                lightboxImg.src = cardImg.src;
+                lightboxModal.classList.remove('hidden');
+            }
+        }
+
+        function closeLightbox() {
+            const lightboxModal = document.getElementById('imageLightboxModal');
+            if (lightboxModal) {
+                lightboxModal.classList.add('hidden');
+            }
+        }
+
+        // 日付フォーマット
+        function formatDateString(dateStr) {
+            try {
+                const d = new Date(dateStr);
+                return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            } catch(e) {
+                return dateStr;
+            }
+        }
+
+        // 各評価ボタンクリック時の処理 (v3.0 実施回数 Attempt_Count 対応)
+        async function handleResponse(action) {
+            if (cards.length === 0 || isSubmitting) return;
+            isSubmitting = true;
+
+            const currentCard = cards[currentIndex];
+            const apiUrl = localStorage.getItem('flashcard_api_url');
+
+            // 評価時、パス以外は「実施回数(Attempt_Count)」を必ず+1する（案①）
+            if (action === 'correct') {
+                currentCard.Attempt_Count = (Number(currentCard.Attempt_Count) || 0) + 1;
+                currentCard.Correct_Count = (Number(currentCard.Correct_Count) || 0) + 1;
+                currentCard.Last_Date = new Date().toISOString();
+            } else if (action === 'wrong') {
+                currentCard.Attempt_Count = (Number(currentCard.Attempt_Count) || 0) + 1;
+                currentCard.Last_Date = new Date().toISOString();
+            }
+
+            const syncStatusBadge = document.getElementById('syncStatusBadge');
+            if (action !== 'pass' && syncStatusBadge) {
+                syncStatusBadge.classList.remove('hidden');
+            }
+
+            // カードを表面にリセット
+            resetCardState();
+
+            const isRoundFinished = (currentIndex + 1) >= cards.length;
+
+            setTimeout(() => {
+                if (isRoundFinished) {
+                    showRoundComplete(); 
+                    currentIndex = 0;
+                } else {
+                    currentIndex = (currentIndex + 1) % cards.length;
+                }
+                displayCard();
+                isSubmitting = false;
+            }, 300);
+
+            if (action === 'pass') {
+                return;
+            }
+
+            try {
+                // GASにPOST。v3.0の do_post は `isCorrect` をもとに、GAS側で Attempt_Count と Correct_Count の両方をインクリメントします。
+                await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain', // CORSプレフライト回避仕様
+                    },
+                    body: JSON.stringify({
+                        sheetName: currentCategory,
+                        rowIndex: currentCard.rowIndex,
+                        isCorrect: (action === 'correct')
+                    })
+                });
+
+                setTimeout(() => {
+                    if (syncStatusBadge) {
+                        syncStatusBadge.classList.add('hidden');
+                    }
+                }, 500);
+
+            } catch (error) {
+                console.error('GAS同期エラー:', error);
+                if (syncStatusBadge) {
+                    syncStatusBadge.classList.add('hidden');
+                }
+            }
+        }
+    </script>
+</body>
+</html># 🧠 Smart Flashcards Pro (v3.0) 完全開発・設計ログ
+- [[App_Development_Log]]
+
+
+- **作成日:** 2026-06-28
+    
+- **ステータス:** バージョン3.0 最終安定版（正答率モデル・Attempt_Count対応・苦手優先ソート刷新）
+    
+- **動作検証済み環境:** iOS 17+ (Safari / PWA / 各種アプリ内ブラウザ), Windows 10/11 (Chrome / Edge), macOS (Safari / Chrome)
+    
+- **システム構成:** Frontend (HTML5/Tailwind/JS) + Backend (GAS Web App) + Database (Google Sheets)
+    
+
+## 1. アプリケーション概要
+
+本プロジェクトは、Googleスプレッドシートを完全にセキュアで編集しやすいパーソナルデータベースとして活用する暗記カードシステム（PWA）の発展型である。
+
+バージョン3.0では、学習データ分析の基礎である「単に正答数が多いか少ないか」を脱却し、**「その問題を何回解いて（Attempt）、何回正解したか（Correct）」から導き出す「正答率（Accuracy Rate）」ベースでの進捗追跡＆苦手抽出モデル**を構築した。
+
+子供が自作問題のテキスト入力や画像の登録を容易に行えるスプレッドシートの手軽さを損なわないため、**正答率の計算やソートの判断ロジックはすべてアプリ内（フロントエンド）に寄せる設計**とし、数式エラーの発生しない堅牢な構造に進化させている。
+
+## 2. v2.0（前作）からの主要な進化・変更点
+
+### ① 「実施回数（`Attempt_Count`）」カラムの追加
+
+- **データスキーマ拡張:** 各学習シート（タブ）の `Correct_Count` カラムの前に、新たに `Attempt_Count` 列を挿入可能に。
+    
+- **未学習問題（未入力・0回）の最適化（案①の採用）:** 新規作成問題など、まだ1度も解いておらず `Attempt_Count` が空欄、または0回となっているカードは、プログラム内で**例外的に「正答率 0%」**として扱う。これにより、苦手優先モードに切り替えた時に「新しく追加した問題が必ず最優先で並ぶ」学習体験を実現。
+    
+
+### ② 「正答率」統計表示への刷新
+
+- **直観的な進捗確認:** これまでの単なる「正解数：X回」の表示を廃止し、**「正答率：XX% (正答数/実施回数)」** の形に画面下部のUI表示を刷新。一目でその問題がどの程度身についているかを定量的に把握可能にした。
+    
+
+### ③ 正答率ベースの「苦手優先」ソートエンジンの刷新
+
+- **多段階（フォールバック）ソート設計:**
+    1.  **第一基準（正答率）：** 正答率（$Correct\_Count / Attempt\_Count$）が「低い」問題から順に並べる（未学習=0% が最優先）。
+    2.  **第二基準（挑戦回数）：** 正答率が同じ場合（例：どちらも0%）、より挑戦していない問題（`Attempt_Count` が少ない＝0回のもの）を前に配置する。
+    3.  **第三基準（新しさ）：** 完全に同格の場合は、`ID` の降順（新しい順）にする。
+    
+    この多段階処理により、単にランダムに並ぶのとは違い、「新問や本当に苦手な問題」を効率的に反復できるようになる。
+    
+
+### ④ 評価書き込み時のGAS連動（v3.0 向けGAS拡張）
+
+- ユーザーが「覚えた！」または「違った」をタップした際、アプリからGAS側へ同期通信を送信。
+- GAS側は、**「間違えたときには、Attempt_Count（実施回数）のみを+1する」「正解したときには、Attempt_Count と Correct_Count の両方を+1する」**という新たなデータ更新ルールを実装。
+
+---
+
+## 3. データベース（スプレッドシート）推奨スキーマ (v3.0)
+
+スプレッドシートの1行目（ヘッダー行）は、以下のヘッダー名を正確に入力してください。
+
+|列位置|カラム名称 (1行目に入力)|属性|説明・仕様|
+|---|---|---|---|
+|**A列**|`ID`|数値|重複のないユニークな連番。新しい順（登録順）のソートキーとして使用。|
+|**B列**|`Category`|文字列|予備分類。|
+|**C列**|`Problem`|文字列|問題文。|
+|**D列**|`Problem_voice`|文字列|問題の読み（日本語誤読防止用）。|
+|**E列**|`Answer`|文字列|解答（カード裏面最上部）。|
+|**F列**|`Answer_voice`|文字列|解答の読み。|
+|**G列**|`Explanation`|文字列|補足解説。|
+|**H列**|`URL`|文字列|補足用画像URL。|
+|**I列**|`Attempt_Count`|数値|**実施回数（新設・v3.0）**。パス以外の解答アクション時に必ず `+1` されます（空欄スタートでOK）。|
+|**J列**|`Correct_Count`|数値|**正答回数の記録**。「覚えた！」を押すと自動で `+1` されます。|
+|**K列**|`Last_Date`|日付|最終学習日。最終回答日付のタイムスタンプ。|
+|**L列**|`Level`|文字列|難易度判定（「高」「中」「低」など）。|
+
+---
+
+## 4. 技術ソースコード：Google Apps Script（GAS）コード (v3.0対応)
+
+スプレッドシート側の「拡張機能」 ＞ 「Apps Script」のエディタへ以下のコードを貼り付け、**「新しいデプロイ」としてウェブアプリを更新（アクセスできるユーザー：全員）** してください。
+
+```javascript
+/**
+ * Smart Flashcard Pro Backend API (v3.0)
+ * 2026-06-28 v3.0 (Attempt_Count / Correct_Count 連動更新対応版)
+ */
+
+function doGet(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // 特別クエリ「__list__」を検知した場合、シート名（タブ名）のリストを返却する
+  if (e.parameter.sheet === '__list__') {
+    const sheets = ss.getSheets();
+    const sheetNames = sheets.map(s => s.getName());
+    return createJsonResponse(sheetNames);
+  }
+
+  // 特定シートのデータ取得処理
+  const defaultSheetName = ss.getSheets()[0].getName();
+  const sheetName = e.parameter.sheet || defaultSheetName;
+  const sheet = ss.getSheetByName(sheetName);
+  
+  if (!sheet) {
+    return createJsonResponse({ error: '指定されたシートが見つかりません: ' + sheetName });
+  }
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) {
+    return createJsonResponse([]); // ヘッダー行しかない場合は空配列を返す
+  }
+
+  const headers = values[0];
+  const data = values.slice(1).map((row, index) => {
+    let obj = { rowIndex: index + 2 }; // 行番号を記録（2行目スタート）
+    headers.forEach((header, i) => {
+      if (row[i] instanceof Date) {
+        obj[header] = Utilities.formatDate(row[i], Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+      } else {
+        obj[header] = row[i];
+      }
+    });
+    return obj;
+  });
+
+  return createJsonResponse(data);
+}
+
+function doPost(e) {
+  try {
+    const params = JSON.parse(e.postData.contents);
+    const { sheetName, rowIndex, isCorrect } = params;
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(sheetName);
+    
+    if (!sheet) {
+      return createJsonResponse({ status: 'error', message: 'シートが見つかりません: ' + sheetName });
+    }
+
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0];
+    
+    // ヘッダー名から更新対象の列番号を自動検出 (インデックス自動検出)
+    const colAttemptCount = headers.indexOf('Attempt_Count') + 1;
+    const colCorrectCount = headers.indexOf('Correct_Count') + 1;
+    const colLastDate = headers.indexOf('Last_Date') + 1;
+
+    // 最低限必要な列のバリデーション
+    if (colLastDate === 0) {
+      return createJsonResponse({ 
+        status: 'error', 
+        message: 'スプレッドシートの1行目に「Last_Date」の列が見つかりません。' 
+      });
+    }
+
+    // 1. 実施回数 (Attempt_Count) のインクリメント処理 (列が存在する場合のみ)
+    if (colAttemptCount > 0) {
+      const currentAttempt = sheet.getRange(rowIndex, colAttemptCount).getValue() || 0;
+      sheet.getRange(rowIndex, colAttemptCount).setValue(Number(currentAttempt) + 1);
+    }
+
+    // 2. 正解回数 (Correct_Count) のインクリメント処理 (正解判定時)
+    if (isCorrect && colCorrectCount > 0) {
+      const currentCorrect = sheet.getRange(rowIndex, colCorrectCount).getValue() || 0;
+      sheet.getRange(rowIndex, colCorrectCount).setValue(Number(currentCorrect) + 1);
+    }
+    
+    // 3. 最終学習日の書き込み
+    sheet.getRange(rowIndex, colLastDate).setValue(new Date());
+
+    return createJsonResponse({ status: 'success', rowIndex: rowIndex });
+    
+  } catch(error) {
+    return createJsonResponse({ status: 'error', message: error.toString() });
+  }
+}
+
+function createJsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
